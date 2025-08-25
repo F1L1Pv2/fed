@@ -11,7 +11,20 @@
 #define CURSOR_COLOR (STUI_RGB(0xFFE7E7E7))
 #define CURSOR_TEXT_COLOR (STUI_RGB(0xFF181818))
 
-void draw_text_len(size_t x, size_t return_x, size_t y, const char* text, int n, size_t width, size_t height, size_t* curOut_x, size_t* curOut_y, size_t cur, size_t fg, size_t bg){
+void draw_text_len(
+        size_t x, 
+        size_t return_x, 
+        size_t y, 
+        const char* text, 
+        int n, 
+        size_t width, 
+        size_t height, 
+        size_t* curOut_x, 
+        size_t* curOut_y, 
+        size_t cur, 
+        size_t fg, 
+        size_t bg
+){
     size_t cur_x = x;
     size_t cur_y = y;
     for(int i = 0; i < n; i++){
@@ -19,9 +32,16 @@ void draw_text_len(size_t x, size_t return_x, size_t y, const char* text, int n,
         if(cur_x >= x + width){
             cur_x = return_x;
             cur_y++;
+            continue;
         }
         if(text[i] != '\n'){
-            stui_putchar_color(cur_x, cur_y, text[i], i == cur ? CURSOR_TEXT_COLOR: fg, i == cur ? CURSOR_COLOR: bg);
+            stui_putchar_color(
+                    cur_x, 
+                    cur_y, 
+                    text[i], 
+                    i == cur ? CURSOR_TEXT_COLOR: fg, 
+                    i == cur ? CURSOR_COLOR: bg
+                    );
             cur_x++;
         }else{
             if(i == cur) stui_putchar_color(cur_x, cur_y, ' ', fg, CURSOR_COLOR);
@@ -30,12 +50,29 @@ void draw_text_len(size_t x, size_t return_x, size_t y, const char* text, int n,
             cur_y++;
         }
     }
-    if(cur_y < y + height && cur_x < x + width && cur == n) stui_putchar_color(cur_x, cur_y, ' ', fg, CURSOR_COLOR);
+
+    if(cur == n &&
+       cur_y < y + height && 
+       cur_x < x + width
+    ) stui_putchar_color(cur_x, cur_y, ' ', fg, CURSOR_COLOR);
+
     if(curOut_x) *curOut_x = cur_x;
     if(curOut_y) *curOut_y = cur_y;
 }
 
-void draw_text(size_t x, size_t return_x, size_t y, const char* text, size_t width, size_t height, size_t* curOut_x, size_t* curOut_y, size_t cur, size_t fg, size_t bg){
+inline void draw_text(
+        size_t x,
+        size_t return_x,
+        size_t y,
+        const char* text,
+        size_t width,
+        size_t height,
+        size_t* curOut_x,
+        size_t* curOut_y,
+        size_t cur,
+        size_t fg,
+        size_t bg)
+{
     draw_text_len(x,return_x,y,text,strlen(text),width,height, curOut_x, curOut_y, cur, fg, bg);
 }
 
@@ -54,7 +91,15 @@ void restore(void) {
 #define TEXT_FG (0)
 #define TEXT_BG (0)
 
-void draw_buffer(GapBuffer* buf, size_t x, size_t y, size_t width, size_t height, size_t fg, size_t bg){
+void draw_buffer(
+        GapBuffer* buf, 
+        size_t x, 
+        size_t y, 
+        size_t width, 
+        size_t height, 
+        size_t fg, 
+        size_t bg
+){
     size_t anchor_x = x;
     size_t anchor_y = y;
     
@@ -67,7 +112,7 @@ void draw_buffer(GapBuffer* buf, size_t x, size_t y, size_t width, size_t height
     size_t cur_x = anchor_x;
     size_t cur_y = anchor_y;
     if(n1) draw_text_len(cur_x, anchor_x, cur_y, text1, n1, width, height, &cur_x, &cur_y, n2 ? -1 : n1, fg, bg);
-    if(n2) draw_text_len(cur_x, anchor_x, cur_y, text2, n2, width, height, NULL, NULL, 0, fg, bg);
+    if(n2) draw_text_len(cur_x, anchor_x, cur_y, text2, n2, width, height - cur_y, NULL, NULL, 0, fg, bg);
     if(n1 == 0 && n2 == 0) stui_putchar_color(cur_x, cur_y, ' ', CURSOR_TEXT_COLOR, CURSOR_COLOR);
 }
 
