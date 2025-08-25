@@ -27,39 +27,55 @@ void draw_text_len(
         int64_t scroll
 ){
     int64_t cur_x = x;
-    int64_t cur_y = y + scroll;
+    int64_t cur_y = y;
+    int64_t visual_line = 0;
+
     for(int i = 0; i < n; i++){
-        if(cur_y >= y + height) break;
+        // wrap if needed
         if(cur_x >= x + width){
             cur_x = return_x;
-            cur_y++;
+            visual_line++;
+        }
+
+        if(text[i] == '\n'){
+            if(visual_line >= scroll && visual_line - scroll < height){
+                if(i == cur){
+                    stui_putchar_color(cur_x, cur_y + (visual_line - scroll), ' ', fg, CURSOR_COLOR);
+                }
+            }
+            cur_x = return_x;
+            visual_line++;
             continue;
         }
-        if(text[i] != '\n'){
-            if(cur_y >= y) stui_putchar_color(
-                    cur_x, 
-                    cur_y, 
-                    text[i], 
-                    i == cur ? CURSOR_TEXT_COLOR: fg, 
-                    i == cur ? CURSOR_COLOR: bg
-                    );
-            cur_x++;
-        }else{
-            if(cur_y >= y && i == cur) stui_putchar_color(cur_x, cur_y, ' ', fg, CURSOR_COLOR);
 
-            cur_x = return_x;
-            cur_y++;
+        // Only draw if inside viewport
+        if(visual_line >= scroll && visual_line - scroll < height){
+            stui_putchar_color(
+                cur_x,
+                cur_y + (visual_line - scroll),
+                text[i],
+                i == cur ? CURSOR_TEXT_COLOR : fg,
+                i == cur ? CURSOR_COLOR : bg
+            );
+        }
+        cur_x++;
+    }
+
+    // Cursor at end of buffer
+    if(cur == n){
+        if(visual_line >= scroll && visual_line - scroll < height){
+            if(cur_x >= x + width){
+                cur_x = return_x;
+                visual_line++;
+            }
+            if(visual_line - scroll < height){
+                stui_putchar_color(cur_x, cur_y + (visual_line - scroll), ' ', fg, CURSOR_COLOR);
+            }
         }
     }
 
-    if(cur == n &&
-        cur_y >= y &&
-       cur_y < y + height && 
-       cur_x < x + width
-    ) stui_putchar_color(cur_x, cur_y, ' ', fg, CURSOR_COLOR);
-
     if(curOut_x) *curOut_x = cur_x;
-    if(curOut_y) *curOut_y = cur_y;
+    if(curOut_y) *curOut_y = cur_y + (visual_line - scroll);
 }
 
 inline void draw_text(
@@ -116,7 +132,7 @@ void draw_buffer(
     int64_t cur_x = anchor_x;
     int64_t cur_y = anchor_y;
     if(n1) draw_text_len(cur_x, anchor_x, cur_y, text1, n1, width, height, &cur_x, &cur_y, n2 ? -1 : n1, fg, bg, scroll);
-    if(n2) draw_text_len(cur_x, anchor_x, cur_y, text2, n2, width, height - cur_y, NULL, NULL, 0, fg, bg, n1 ? 0 : scroll);
+    if(n2) draw_text_len(cur_x, anchor_x, cur_y, text2, n2, width - cur_x, height - cur_y, NULL, NULL, 0, fg, bg, n1 ? 0 : scroll);
     if(n1 == 0 && n2 == 0) stui_putchar_color(cur_x, cur_y, ' ', CURSOR_TEXT_COLOR, CURSOR_COLOR);
 }
 
