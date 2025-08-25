@@ -12,21 +12,22 @@
 #define CURSOR_TEXT_COLOR (STUI_RGB(0xFF181818))
 
 void draw_text_len(
-        size_t x, 
-        size_t return_x, 
-        size_t y, 
+        int64_t x, 
+        int64_t return_x, 
+        int64_t y, 
         const char* text, 
         int n, 
-        size_t width, 
-        size_t height, 
-        size_t* curOut_x, 
-        size_t* curOut_y, 
+        int64_t width, 
+        int64_t height, 
+        int64_t* curOut_x, 
+        int64_t* curOut_y, 
         size_t cur, 
         size_t fg, 
-        size_t bg
+        size_t bg,
+        int64_t scroll
 ){
-    size_t cur_x = x;
-    size_t cur_y = y;
+    int64_t cur_x = x;
+    int64_t cur_y = y + scroll;
     for(int i = 0; i < n; i++){
         if(cur_y >= y + height) break;
         if(cur_x >= x + width){
@@ -35,7 +36,7 @@ void draw_text_len(
             continue;
         }
         if(text[i] != '\n'){
-            stui_putchar_color(
+            if(cur_y >= y) stui_putchar_color(
                     cur_x, 
                     cur_y, 
                     text[i], 
@@ -44,7 +45,7 @@ void draw_text_len(
                     );
             cur_x++;
         }else{
-            if(i == cur) stui_putchar_color(cur_x, cur_y, ' ', fg, CURSOR_COLOR);
+            if(cur_y >= y && i == cur) stui_putchar_color(cur_x, cur_y, ' ', fg, CURSOR_COLOR);
 
             cur_x = return_x;
             cur_y++;
@@ -52,6 +53,7 @@ void draw_text_len(
     }
 
     if(cur == n &&
+        cur_y >= y &&
        cur_y < y + height && 
        cur_x < x + width
     ) stui_putchar_color(cur_x, cur_y, ' ', fg, CURSOR_COLOR);
@@ -61,19 +63,20 @@ void draw_text_len(
 }
 
 inline void draw_text(
-        size_t x,
-        size_t return_x,
-        size_t y,
+        int64_t x,
+        int64_t return_x,
+        int64_t y,
         const char* text,
         size_t width,
         size_t height,
-        size_t* curOut_x,
-        size_t* curOut_y,
+        int64_t* curOut_x,
+        int64_t* curOut_y,
         size_t cur,
         size_t fg,
-        size_t bg)
-{
-    draw_text_len(x,return_x,y,text,strlen(text),width,height, curOut_x, curOut_y, cur, fg, bg);
+        size_t bg,
+        int64_t scroll
+){
+    draw_text_len(x,return_x,y,text,strlen(text),width,height, curOut_x, curOut_y, cur, fg, bg, scroll);
 }
 
 stui_term_flag_t flags;
@@ -93,15 +96,16 @@ void restore(void) {
 
 void draw_buffer(
         GapBuffer* buf, 
-        size_t x, 
-        size_t y, 
+        int64_t x, 
+        int64_t y, 
         size_t width, 
         size_t height, 
         size_t fg, 
-        size_t bg
+        size_t bg,
+        int64_t scroll
 ){
-    size_t anchor_x = x;
-    size_t anchor_y = y;
+    int64_t anchor_x = x;
+    int64_t anchor_y = y;
     
     char* text1 = NULL;
     char* text2 = NULL;
@@ -109,10 +113,10 @@ void draw_buffer(
     size_t n2 = 0;
     GapBuffer_get_strs(buf, &text1, &n1, &text2,&n2);
 
-    size_t cur_x = anchor_x;
-    size_t cur_y = anchor_y;
-    if(n1) draw_text_len(cur_x, anchor_x, cur_y, text1, n1, width, height, &cur_x, &cur_y, n2 ? -1 : n1, fg, bg);
-    if(n2) draw_text_len(cur_x, anchor_x, cur_y, text2, n2, width, height - cur_y, NULL, NULL, 0, fg, bg);
+    int64_t cur_x = anchor_x;
+    int64_t cur_y = anchor_y;
+    if(n1) draw_text_len(cur_x, anchor_x, cur_y, text1, n1, width, height, &cur_x, &cur_y, n2 ? -1 : n1, fg, bg, scroll);
+    if(n2) draw_text_len(cur_x, anchor_x, cur_y, text2, n2, width, height - cur_y, NULL, NULL, 0, fg, bg, n1 ? 0 : scroll);
     if(n1 == 0 && n2 == 0) stui_putchar_color(cur_x, cur_y, ' ', CURSOR_TEXT_COLOR, CURSOR_COLOR);
 }
 
@@ -157,6 +161,63 @@ defer:
     return result;
 }
 
+bool GapBuffer_find_backward(GapBuffer* buf, size_t start_index, char searching, size_t* found_index){
+    if(start_index > buf->count) return false;
+    for(size_t i = start_index; i > 0; i--){
+        if(GapBuffer_char_at(buf, i) == searching){
+            *found_index = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool GapBuffer_find_forward(GapBuffer* buf, size_t start_index, char searching, size_t* found_index){
+    if(start_index > buf->count) return false;
+    for(size_t i = start_index; i < buf->count; i++){
+        if(GapBuffer_char_at(buf, i) == searching){
+            *found_index = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+// static to keep across calls
+static size_t preferred_column = 0;
+
+void GapBuffer_move_up(GapBuffer* buf) {
+    size_t cur = GapBuffer_cursor_pos(buf);
+    size_t line_start = 0;
+    if (GapBuffer_find_backward(buf, cur ? cur - 1 : 0, '\n', &line_start)) {
+        line_start++; // move after newline
+    }
+    size_t prev_line_end = 0;
+    if (!GapBuffer_find_backward(buf, line_start ? line_start - 1 : 0, '\n', &prev_line_end)) {
+        GapBuffer_goto(buf, 0);
+        return;
+    }
+    size_t prev_line_start = 0;
+    if (GapBuffer_find_backward(buf, prev_line_end ? prev_line_end - 1 : 0, '\n', &prev_line_start)) {
+        prev_line_start++;
+    }
+    size_t prev_line_len = prev_line_end - prev_line_start;
+    size_t target = prev_line_start + (preferred_column < prev_line_len ? preferred_column : prev_line_len);
+    GapBuffer_goto(buf, target);
+}
+
+void GapBuffer_move_down(GapBuffer* buf) {
+    size_t cur = GapBuffer_cursor_pos(buf);
+    size_t line_end = buf->count;
+    GapBuffer_find_forward(buf, cur, '\n', &line_end);
+    if (line_end == buf->count) return; // no next line
+    size_t next_line_start = line_end + 1;
+    size_t next_line_end = buf->count;
+    GapBuffer_find_forward(buf, next_line_start, '\n', &next_line_end);
+    size_t next_line_len = next_line_end - next_line_start;
+    size_t target = next_line_start + (preferred_column < next_line_len ? preferred_column : next_line_len);
+    GapBuffer_goto(buf, target);
+}
 
 #define STUI_CTRL(chr) ((chr) & 0x1F)
 int main(int argc, char** argv){
@@ -207,6 +268,7 @@ int main(int argc, char** argv){
     String_Builder input_box_msg = {0};
     sb_append_cstr(&input_box_msg, input_box_msg_text);
     bool running = true;
+    int64_t scroll_offset = 0;
     while(running){
         for(size_t y = 0; y < term_height; ++y) {
             for(size_t x = 0; x < term_width; ++x) {
@@ -214,7 +276,7 @@ int main(int argc, char** argv){
             }
         }
 
-        draw_buffer(&gap_buffer, 0,0, term_width, term_height - 1, TEXT_FG, TEXT_BG);
+        draw_buffer(&gap_buffer, 0,0, term_width, term_height - 1, TEXT_FG, TEXT_BG, scroll_offset);
         /*
         else{
             static char buf[256];
@@ -257,13 +319,13 @@ int main(int argc, char** argv){
        
         if(command) {
             stui_putchar_color(0, term_height-1, '>', INPUT_BOX_FG, INPUT_BOX_BG);
-            draw_buffer(&input_box, 1,term_height - 1, term_width - 1, 1, INPUT_BOX_FG, INPUT_BOX_BG);
+            draw_buffer(&input_box, 1,term_height - 1, term_width - 1, 1, INPUT_BOX_FG, INPUT_BOX_BG, 0);
         }else{
-            size_t offset = 0;
-            draw_text(0,0,term_height - 1, filename, term_width, 1, &offset, NULL, -1, INPUT_BOX_FG, INPUT_BOX_BG);
+            int64_t offset = 0;
+            draw_text(0,0,term_height - 1, filename, term_width, 1, &offset, NULL, -1, INPUT_BOX_FG, INPUT_BOX_BG, 0);
             stui_putchar_color(offset++, term_height-1, ':', INPUT_BOX_FG, INPUT_BOX_BG);
             stui_putchar_color(offset++, term_height-1, ' ', INPUT_BOX_FG, INPUT_BOX_BG);
-            draw_text_len(offset,0,term_height - 1, input_box_msg.items, input_box_msg.count, term_width - offset, 1, NULL, NULL, -1, INPUT_BOX_FG, INPUT_BOX_BG);
+            draw_text_len(offset,0,term_height - 1, input_box_msg.items, input_box_msg.count, term_width - offset, 1, NULL, NULL, -1, INPUT_BOX_FG, INPUT_BOX_BG, 0);
         }
 
         stui_refresh();
@@ -337,14 +399,34 @@ int main(int argc, char** argv){
                 continue;
             }
             if(ch == STUI_KEY_ESC) continue;
-            if(ch == STUI_KEY_UP) continue;
-            if(ch == STUI_KEY_DOWN) continue;
             if(ch == STUI_KEY_LEFT){
                 GapBuffer_left(&gap_buffer);
+                // update preferred column
+                size_t cur = GapBuffer_cursor_pos(&gap_buffer);
+                size_t line_start = 0;
+                if (GapBuffer_find_backward(&gap_buffer, cur ? cur-1 : 0, '\n', &line_start)) {
+                    line_start++;
+                }
+                preferred_column = cur - line_start;
                 continue;
             }
             if(ch == STUI_KEY_RIGHT){
                 GapBuffer_right(&gap_buffer);
+                // update preferred column
+                size_t cur = GapBuffer_cursor_pos(&gap_buffer);
+                size_t line_start = 0;
+                if (GapBuffer_find_backward(&gap_buffer, cur ? cur-1 : 0, '\n', &line_start)) {
+                    line_start++;
+                }
+                preferred_column = cur - line_start;
+                continue;
+            }
+            if(ch == STUI_KEY_UP){
+                GapBuffer_move_up(&gap_buffer);
+                continue;
+            }
+            if(ch == STUI_KEY_DOWN){
+                GapBuffer_move_down(&gap_buffer);
                 continue;
             }
             if(ch == 127){
@@ -354,6 +436,13 @@ int main(int argc, char** argv){
             if(ch == STUI_CTRL('b')){
                 command = true;
                 GapBuffer_reset(&input_box);
+                continue;
+            }
+            if(ch == 9){
+                GapBuffer_insert_char(&gap_buffer, ' ');
+                GapBuffer_insert_char(&gap_buffer, ' ');
+                GapBuffer_insert_char(&gap_buffer, ' ');
+                GapBuffer_insert_char(&gap_buffer, ' ');
                 continue;
             }
             GapBuffer_insert_char(&gap_buffer, ch);

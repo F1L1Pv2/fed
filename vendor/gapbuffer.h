@@ -111,9 +111,16 @@ void GapBuffer_right(GapBuffer* buf){
     buf->items[buf->gap_begin++] = buf->items[buf->gap_end++];
 }
 
-char GapBuffer_char_at(GapBuffer* buf, size_t index){
-    if(index < buf->gap_begin) return buf->items[index];
-    return buf->items[index + buf->gap_end];
+size_t GapBuffer_cursor_pos(GapBuffer* buf){
+    return buf->gap_begin;
+}
+
+char GapBuffer_char_at(GapBuffer* buf, size_t index) {
+    if (index < buf->gap_begin) {
+        return buf->items[index];
+    } else {
+        return buf->items[index + (buf->gap_end - buf->gap_begin)];
+    }
 }
 
 void GapBuffer_reset(GapBuffer* buf){
