@@ -11,6 +11,9 @@
 #define CURSOR_COLOR (STUI_RGB(0xFFE7E7E7))
 #define CURSOR_TEXT_COLOR (STUI_RGB(0xFF181818))
 
+int64_t real_cur_x = 0;
+int64_t real_cur_y = 0;
+
 void draw_text_len(
         int64_t x, 
         int64_t return_x, 
@@ -29,12 +32,15 @@ void draw_text_len(
     int64_t cur_x = x;
     int64_t cur_y = y + scroll;
     for(int i = 0; i < n; i++){
-        if(cur_y >= y + height) break;
+        if(i == cur){
+            real_cur_x = cur_x;
+            real_cur_y = cur_y;
+        }
         if(cur_x >= x + width){
             cur_x = return_x;
             cur_y++;
-            continue;
         }
+        if(cur_y >= y + height) break;
         if(text[i] != '\n'){
             if(cur_y >= y) stui_putchar_color(
                     cur_x, 
@@ -45,7 +51,7 @@ void draw_text_len(
                     );
             cur_x++;
         }else{
-            if(cur_y >= y && i == cur) stui_putchar_color(cur_x, cur_y, ' ', fg, CURSOR_COLOR);
+            if(i == cur && cur_x < x + width && cur_y < y + height) stui_putchar_color(cur_x, cur_y, ' ', fg, CURSOR_COLOR);
 
             cur_x = return_x;
             cur_y++;
@@ -57,6 +63,11 @@ void draw_text_len(
        cur_y < y + height && 
        cur_x < x + width
     ) stui_putchar_color(cur_x, cur_y, ' ', fg, CURSOR_COLOR);
+
+    if(n == cur){
+        real_cur_x = cur_x;
+        real_cur_y = cur_y;
+    }
 
     if(curOut_x) *curOut_x = cur_x;
     if(curOut_y) *curOut_y = cur_y;
@@ -77,18 +88,6 @@ inline void draw_text(
         int64_t scroll
 ){
     draw_text_len(x,return_x,y,text,strlen(text),width,height, curOut_x, curOut_y, cur, fg, bg, scroll);
-}
-
-stui_term_flag_t flags;
-void restore(void) {
-    stui_term_set_flags(flags);
-#ifndef DISABLE_ALT_BUFFER
-    // Alternate buffer.
-    // The escape sequence below shouldn't do anything on terminals that don't support it
-    printf("\033[?1049l");
-#endif
-    printf("\e[?25h"); // Show cursor
-    fflush(stdout);
 }
 
 #define TEXT_FG (0)
@@ -116,9 +115,39 @@ void draw_buffer(
     int64_t cur_x = anchor_x;
     int64_t cur_y = anchor_y;
     if(n1) draw_text_len(cur_x, anchor_x, cur_y, text1, n1, width, height, &cur_x, &cur_y, n2 ? -1 : n1, fg, bg, scroll);
-    if(n2) draw_text_len(cur_x, anchor_x, cur_y, text2, n2, width - cur_x, height - cur_y, NULL, NULL, 0, fg, bg, n1 ? 0 : scroll);
+    size_t cursor = GapBuffer_cursor_pos(buf);
+    if (cursor >= n1) {
+        draw_text_len(cur_x, anchor_x, cur_y, text2, n2,
+                      width - (cur_x - anchor_x),
+                      height - (cur_y - anchor_y),
+                      NULL, NULL,
+                      cursor - n1, // correct offset inside text2
+                      fg, bg,
+                      n1 ? 0 : scroll);
+    } else {
+        draw_text_len(cur_x, anchor_x, cur_y, text2, n2,
+                      width - (cur_x - anchor_x),
+                      height - (cur_y - anchor_y),
+                      NULL, NULL,
+                      -1, // cursor not in text2
+                      fg, bg,
+                      n1 ? 0 : scroll);
+    }
     if(n1 == 0 && n2 == 0) stui_putchar_color(cur_x, cur_y, ' ', CURSOR_TEXT_COLOR, CURSOR_COLOR);
 }
+
+stui_term_flag_t flags;
+void restore(void) {
+    stui_term_set_flags(flags);
+#ifndef DISABLE_ALT_BUFFER
+    // Alternate buffer.
+    // The escape sequence below shouldn't do anything on terminals that don't support it
+    printf("\033[?1049l");
+#endif
+    printf("\e[?25h"); // Show cursor
+    fflush(stdout);
+}
+
 
 bool GapBuffer_write_entire_file(GapBuffer* gap_buf, const char* path){
     bool result = true;
@@ -277,6 +306,8 @@ int main(int argc, char** argv){
         }
 
         draw_buffer(&gap_buffer, 0,0, term_width, term_height - 1, TEXT_FG, TEXT_BG, scroll_offset);
+        if(real_cur_y >= (int64_t)term_height - 1) {scroll_offset--; continue;}
+        if(real_cur_y < 0) {scroll_offset++; continue;}
         /*
         else{
             static char buf[256];

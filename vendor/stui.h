@@ -187,8 +187,11 @@ void stui_getsize(size_t *x, size_t *y) {
 }
 void stui_putchar_color(size_t x, size_t y, int c, uint32_t fg, uint32_t bg) {
     _StuiCodepoint* buffer = _stui_buffers[_stui_back_buffer];
-    assert(x < _stui_width);
-    assert(y < _stui_height);
+    //DIRTY HACK!
+    if(x >= _stui_width) return;
+    if(y >= _stui_height) return;
+    //assert(x < _stui_width);
+    //assert(y < _stui_height);
     buffer[y * _stui_width + x].code = c;
 #ifdef STUI_NO_COLORS
     (void)fg;
